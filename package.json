@@ -1,0 +1,29 @@
+{
+  "name": "wdk-v2-react-native",
+  "version": "0.1.0",
+  "description": "WDK v2 React Native TurboModule — thin wrapper over the native engine",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "react-native": "src/index.ts",
+  "files": [
+    "src",
+    "ios",
+    "android",
+    "wdk-v2-react-native.podspec"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-native": ">=0.73.0"
+  },
+  "devDependencies": {
+    "react": "^18.2.0",
+    "react-native": "^0.74.0",
+    "typescript": "^5.4.0"
+  },
+  "keywords": ["react-native", "wallet", "crypto", "wdk"],
+  "license": "MIT"
+}
