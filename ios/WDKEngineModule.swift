@@ -1,15 +1,18 @@
 /**
- * WDKEngineModule — iOS TurboModule Implementation
+ * WDKEngineModule — iOS TurboModule Implementation (RN 0.76+)
  *
  * This is the bridge between React Native's JS thread and the
  * wdk-v2-engine C library. All heavy work (QuickJS, crypto) runs
  * on a background GCD queue.
+ *
+ * Module name exposed to JS: "WDKEngine"
+ * Spec file: src/NativeWDKEngine.ts
  */
 
 import Foundation
 
 @objc(WDKEngineModule)
-class WDKEngineModule: NSObject {
+class WDKEngineModule: NSObject, RCTBridgeModule {
 
     // MARK: - Private State
 

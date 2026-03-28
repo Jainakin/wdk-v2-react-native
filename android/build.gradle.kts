@@ -1,6 +1,7 @@
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
+    id("com.facebook.react")
 }
 
 android {
@@ -26,6 +27,9 @@ android {
             java.srcDirs("src/main/kotlin")
         }
     }
+
+    // The React Native Gradle plugin will add codegen-generated sources
+    // to the build automatically based on the codegenConfig in package.json.
 }
 
 dependencies {
