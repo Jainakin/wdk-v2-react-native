@@ -2,10 +2,6 @@ require 'json'
 
 package = JSON.parse(File.read(File.join(__dir__, 'package.json')))
 
-# Resolve react_native_pods.rb to get install_modules_dependencies helper
-# This handles all the New Architecture / TurboModule setup automatically.
-folly_compiler_flags = '-DFOLLY_NO_CONFIG -DFOLLY_MOBILE=1 -DFOLLY_USE_LIBCPP=1 -Wno-comma -Wno-shorten-64-to-32'
-
 Pod::Spec.new do |s|
   s.name         = "wdk-v2-react-native"
   s.version      = package['version']
@@ -16,21 +12,23 @@ Pod::Spec.new do |s|
   s.platform     = :ios, "15.0"
   s.source       = { :git => "https://github.com/Jainakin/wdk-v2-react-native.git", :tag => s.version }
 
+  # Source files: ObjC bridge (.mm) + Swift implementation + C header for Swift→C interop
   s.source_files = "ios/**/*.{h,m,mm,swift}"
 
-  # Depend on the native engine (Phase 1)
-  # In production, this would be a CocoaPod or SPM package.
-  # For now, the engine is linked from the app's Xcode project.
+  # WDKEngineBridge.h is a public header — CocoaPods includes it in the
+  # generated umbrella header so that WDKEngineModule.swift can see the C
+  # engine functions (wdk_engine_create, etc.) via the pod's module map.
+  # The app's bridging header no longer declares these functions, so there
+  # is no duplicate-declaration conflict.
 
   s.swift_version = "5.9"
 
-  # Use install_modules_dependencies to set up TurboModule / New Architecture
-  # dependencies automatically. This replaces the old "React-Core" dependency
-  # and handles codegen, Folly, ReactCommon headers, etc.
-  if defined?(install_modules_dependencies)
-    install_modules_dependencies(s)
-  else
-    s.dependency "React-Core"
-    s.dependency "ReactCommon/turbomodule/core"
-  end
+  # Use React-Core only — no codegen / install_modules_dependencies.
+  #
+  # Rationale: getTurboModule: requires codegen-generated WDKEngineSpec.h,
+  # which only exists after the full codegen pipeline runs. In RN 0.76+ new
+  # arch, RCT_EXTERN_MODULE classes are automatically accessible via
+  # TurboModuleRegistry.getEnforcing() without needing the generated JSI
+  # binding. This avoids the RN 0.83 duplicate-symbol linker issue entirely.
+  s.dependency "React-Core"
 end

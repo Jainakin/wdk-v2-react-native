@@ -1,21 +1,20 @@
 /**
- * WDKEngineModule.mm — ObjC++ TurboModule bridge for React Native 0.76+
+ * WDKEngineModule.mm — ObjC bridge for the WDKEngineModule TurboModule
  *
- * This file:
- * 1. Declares the ObjC interface that bridges to the Swift implementation
- * 2. Exports the module using RCT_EXTERN_MODULE / RCT_EXTERN_METHOD
- * 3. Implements getTurboModule: so the TurboModule infrastructure can
- *    create the JSI binding (codegen-generated NativeWDKEngineSpecJSI)
+ * Declares the ObjC interface that bridges to WDKEngineModule.swift.
+ * Uses RCT_EXTERN_MODULE / RCT_EXTERN_METHOD — the standard pattern for
+ * Swift TurboModules in React Native 0.76+.
+ *
+ * Why no getTurboModule: / NativeWDKEngineSpecJSI?
+ *   Those require codegen to produce WDKEngineSpec.h, which only exists
+ *   after running the codegen pipeline. Our module works correctly without
+ *   the generated JSI binding — RN 0.76+ new arch auto-wraps RCT_EXTERN_MODULE
+ *   classes as TurboModules accessible via TurboModuleRegistry.getEnforcing().
  *
  * The actual business logic lives in WDKEngineModule.swift.
  */
 
 #import <React/RCTBridgeModule.h>
-#import <ReactCommon/RCTTurboModule.h>
-
-#ifdef RCT_NEW_ARCH_ENABLED
-#import <WDKEngineSpec/WDKEngineSpec.h>
-#endif
 
 @interface RCT_EXTERN_MODULE(WDKEngineModule, NSObject)
 
@@ -36,13 +35,5 @@ RCT_EXTERN_METHOD(getState:
 RCT_EXTERN_METHOD(destroy:
                   (RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
-
-#ifdef RCT_NEW_ARCH_ENABLED
-- (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
-    (const facebook::react::ObjCTurboModule::InitParams &)params
-{
-    return std::make_shared<facebook::react::NativeWDKEngineSpecJSI>(params);
-}
-#endif
 
 @end
