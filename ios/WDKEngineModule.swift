@@ -437,8 +437,11 @@ class WDKEngineModule: RCTEventEmitter {
             wdk_free_string(resultPtr)
             // wdk_engine_call JSON.stringifies the result, so a string "locked"
             // comes back as "\"locked\"". Decode it properly via JSONSerialization.
+            // Must use .fragmentsAllowed because a bare JSON string like "ready"
+            // is not a valid top-level JSON object/array per default options.
             let decoded = (try? JSONSerialization.jsonObject(
-                with: Data(jsonString.utf8)
+                with: Data(jsonString.utf8),
+                options: .fragmentsAllowed
             ) as? String) ?? jsonString
             resolve(decoded)
         }

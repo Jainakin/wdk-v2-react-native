@@ -42,7 +42,13 @@ export * from './types';
 async function engineCall<T>(method: string, params?: Record<string, unknown>): Promise<T> {
   const jsonArgs = JSON.stringify(params ?? {});
   const jsonResult = await NativeWDKEngine.call(method, jsonArgs);
-  return JSON.parse(jsonResult) as T;
+  // void-returning JS functions: C engine now returns "null" for undefined results.
+  // Also handle edge cases where the native bridge returns undefined/null directly.
+  if (jsonResult === undefined || jsonResult === null || jsonResult === 'undefined') {
+    return undefined as T;
+  }
+  const parsed = JSON.parse(jsonResult);
+  return parsed as T;
 }
 
 let initialized = false;
