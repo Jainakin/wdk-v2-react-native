@@ -52,6 +52,25 @@ async function engineCall<T>(method: string, params?: Record<string, unknown>): 
 }
 
 let initialized = false;
+let initPromise: Promise<void> | null = null;
+
+/**
+ * Ensure the engine is initialized. If already done, returns immediately
+ * (no async overhead). If initialization is in progress, awaits the same
+ * Promise to avoid race conditions from concurrent calls.
+ */
+async function ensureInitialized(): Promise<void> {
+  if (initialized) return;
+  if (initPromise) {
+    await initPromise;
+    return;
+  }
+  initPromise = NativeWDKEngine.initialize().then(() => {
+    initialized = true;
+    initPromise = null;
+  });
+  await initPromise;
+}
 
 /**
  * WDKWallet — The main API for interacting with the wallet engine.
@@ -65,9 +84,7 @@ export const WDKWallet = {
    * Loads the QuickJS engine and the JS bundle.
    */
   async initialize(): Promise<void> {
-    if (initialized) return;
-    await NativeWDKEngine.initialize();
-    initialized = true;
+    await ensureInitialized();
   },
 
   /**
@@ -84,7 +101,7 @@ export const WDKWallet = {
     network?: string;
     btcClient?: { type: string; url?: string };
   }): Promise<void> {
-    await WDKWallet.initialize();
+    await ensureInitialized();
     await engineCall<void>('configure', params);
   },
 
@@ -93,7 +110,7 @@ export const WDKWallet = {
    * Does NOT unlock the wallet — call unlockWallet() with the mnemonic.
    */
   async createWallet(params?: CreateWalletParams): Promise<CreateWalletResult> {
-    await WDKWallet.initialize();
+    await ensureInitialized();
     return engineCall<CreateWalletResult>('createWallet', params);
   },
 
@@ -102,7 +119,7 @@ export const WDKWallet = {
    * Derives the seed and master key. After this, chain operations are available.
    */
   async unlockWallet(params: UnlockWalletParams): Promise<void> {
-    await WDKWallet.initialize();
+    await ensureInitialized();
     await engineCall<void>('unlockWallet', params);
   },
 
@@ -111,7 +128,7 @@ export const WDKWallet = {
    * The wallet can be unlocked again with the mnemonic.
    */
   async lockWallet(): Promise<void> {
-    await WDKWallet.initialize();
+    await ensureInitialized();
     await engineCall<void>('lockWallet');
   },
 
@@ -121,6 +138,7 @@ export const WDKWallet = {
   async destroyWallet(): Promise<void> {
     await NativeWDKEngine.destroy();
     initialized = false;
+    initPromise = null;
   },
 
   /**
@@ -136,7 +154,7 @@ export const WDKWallet = {
    * Requires the wallet to be unlocked and the chain module registered.
    */
   async getAddress(params: GetAddressParams): Promise<string> {
-    await WDKWallet.initialize();
+    await ensureInitialized();
     return engineCall<string>('getAddress', params);
   },
 
@@ -144,7 +162,7 @@ export const WDKWallet = {
    * Get the balance for an address on a specific chain.
    */
   async getBalance(params: GetBalanceParams): Promise<string> {
-    await WDKWallet.initialize();
+    await ensureInitialized();
     return engineCall<string>('getBalance', params);
   },
 
@@ -153,7 +171,7 @@ export const WDKWallet = {
    * Builds, signs, and broadcasts in one call.
    */
   async send(params: SendParams): Promise<SendResult> {
-    await WDKWallet.initialize();
+    await ensureInitialized();
     return engineCall<SendResult>('send', params);
   },
 
@@ -161,7 +179,7 @@ export const WDKWallet = {
    * Get transaction history for an address.
    */
   async getHistory(params: { chain: ChainId; address: string; limit?: number }): Promise<TxRecord[]> {
-    await WDKWallet.initialize();
+    await ensureInitialized();
     return engineCall<TxRecord[]>('getHistory', params);
   },
 };
