@@ -25,13 +25,5 @@
     "typescript": "^5.4.0"
   },
   "keywords": ["react-native", "wallet", "crypto", "wdk"],
-  "license": "MIT",
-  "codegenConfig": {
-    "name": "WDKEngineSpec",
-    "type": "modules",
-    "jsSrcsDir": "src",
-    "android": {
-      "javaPackageName": "com.tetherto.wdk"
-    }
-  }
+  "license": "MIT"
 }
