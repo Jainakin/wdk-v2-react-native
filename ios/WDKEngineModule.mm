@@ -14,9 +14,10 @@
  */
 
 #import <React/RCTBridgeModule.h>
+#import <React/RCTEventEmitter.h>
 #import <ReactCommon/RCTTurboModule.h>
 
-@interface RCT_EXTERN_MODULE(WDKEngineModule, NSObject)
+@interface RCT_EXTERN_REMAP_MODULE(WDKEngine, WDKEngineModule, RCTEventEmitter)
 
 RCT_EXTERN_METHOD(initialize:
                   (RCTPromiseResolveBlock)resolve
@@ -34,6 +35,11 @@ RCT_EXTERN_METHOD(getState:
 
 RCT_EXTERN_METHOD(destroy:
                   (RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(writeTestLog:
+                  (NSString *)content
+                  resolve:(RCTPromiseResolveBlock)resolve
                   reject:(RCTPromiseRejectBlock)reject)
 
 /**

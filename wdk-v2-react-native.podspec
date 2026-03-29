@@ -29,4 +29,5 @@ Pod::Spec.new do |s|
   #   in RN 0.76+ bridgeless mode, without requiring codegen.
   s.dependency "React-Core"
   s.dependency "ReactCommon/turbomodule/core"
+  s.dependency "React-NativeModulesApple"
 end

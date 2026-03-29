@@ -220,16 +220,40 @@ private func wdkFetch(
 }
 
 // ════════════════════════════════════════════════════════════════════
-// MARK: - WDKEngineModule — TurboModule Implementation
+// MARK: - WDKEngineModule — TurboModule + EventEmitter Implementation
 // ════════════════════════════════════════════════════════════════════
 
 @objc(WDKEngineModule)
-class WDKEngineModule: NSObject, RCTBridgeModule {
+class WDKEngineModule: RCTEventEmitter {
 
     // MARK: Module identity
 
-    @objc static func moduleName() -> String { "WDKEngine" }
-    @objc static func requiresMainQueueSetup() -> Bool { false }
+    @objc override static func moduleName() -> String! { "WDKEngine" }
+    @objc override static func requiresMainQueueSetup() -> Bool { false }
+
+    // MARK: - RCTEventEmitter
+
+    /// The single event emitted whenever the wallet state changes.
+    override func supportedEvents() -> [String]! {
+        return ["wdkStateChange"]
+    }
+
+    // Avoid the "sendEvent called without observer" warning in dev builds.
+    private var listenerCount = 0
+
+    override func startObserving() {
+        listenerCount += 1
+    }
+
+    override func stopObserving() {
+        listenerCount -= 1
+    }
+
+    /// Emit a state-change event to JS — only when at least one listener is active.
+    private func emitStateChange(_ state: String) {
+        guard listenerCount > 0 else { return }
+        sendEvent(withName: "wdkStateChange", body: ["state": state])
+    }
 
     // MARK: Private state
 
@@ -240,9 +264,17 @@ class WDKEngineModule: NSObject, RCTBridgeModule {
     private var engine: OpaquePointer?
     private var isInitialized = false
 
-    // Static C strings for platform info (must outlive the C structs)
+    // Static C strings for platform info (must outlive the provider structs)
     private static let osName  = strdup("ios")!
     private static let version = strdup("0.2.0")!
+
+    // Provider structs heap-allocated so C bridge pointers remain valid
+    // after initialize() returns. The C bridge stores raw pointers
+    // (s_platform_provider = provider) so these must stay alive as long
+    // as the engine is alive. Deallocated in deinit.
+    private var platformProviderPtr: UnsafeMutablePointer<WDKPlatformProvider>?
+    private var storageProviderPtr:  UnsafeMutablePointer<WDKStorageProvider>?
+    private var netProviderPtr:      UnsafeMutablePointer<WDKNetProvider>?
 
     // MARK: - initialize()
 
@@ -264,17 +296,24 @@ class WDKEngineModule: NSObject, RCTBridgeModule {
 
             let ctx = wdk_engine_get_context(eng)
 
-            // 2. Platform bridge — OS info, random bytes, logging
-            var platform = WDKPlatformProvider(
+            // 2. Pure-C bridges (crypto + encoding) — no provider struct needed
+            wdk_register_crypto_bridge(ctx)
+            wdk_register_encoding_bridge(ctx)
+
+            // 3. Platform bridge — heap-allocated so the C static pointer stays valid
+            let pp = UnsafeMutablePointer<WDKPlatformProvider>.allocate(capacity: 1)
+            pp.initialize(to: WDKPlatformProvider(
                 os_name:          WDKEngineModule.osName,
                 engine_version:   WDKEngineModule.version,
                 get_random_bytes: wdkGetRandomBytes,
                 log_message:      wdkLogMessage
-            )
-            wdk_register_platform_bridge(ctx, &platform)
+            ))
+            self.platformProviderPtr = pp
+            wdk_register_platform_bridge(ctx, pp)
 
-            // 3. Storage bridge — Keychain (secure) + UserDefaults (regular)
-            var storage = WDKStorageProvider(
+            // 4. Storage bridge — Keychain (secure) + UserDefaults (regular)
+            let sp = UnsafeMutablePointer<WDKStorageProvider>.allocate(capacity: 1)
+            sp.initialize(to: WDKStorageProvider(
                 secure_set:     wdkSecureSet,
                 secure_get:     wdkSecureGet,
                 secure_delete:  wdkSecureDelete,
@@ -282,33 +321,56 @@ class WDKEngineModule: NSObject, RCTBridgeModule {
                 regular_set:    wdkRegularSet,
                 regular_get:    wdkRegularGet,
                 regular_delete: wdkRegularDelete
-            )
-            wdk_register_storage_bridge(ctx, &storage)
+            ))
+            self.storageProviderPtr = sp
+            wdk_register_storage_bridge(ctx, sp)
 
-            // 4. Network bridge — URLSession
-            var net = WDKNetProvider(fetch: wdkFetch)
-            wdk_register_net_bridge(ctx, &net)
+            // 5. Network bridge — URLSession
+            let np = UnsafeMutablePointer<WDKNetProvider>.allocate(capacity: 1)
+            np.initialize(to: WDKNetProvider(fetch: wdkFetch))
+            self.netProviderPtr = np
+            wdk_register_net_bridge(ctx, np)
 
-            // 5. Load JS bundle from app bundle resources
-            guard let bundleURL = Bundle.main.url(
-                forResource: "wdk-bundle",
-                withExtension: "js"
-            ) else {
-                reject("E_BUNDLE", "wdk-bundle.js not found in app bundle", nil)
-                return
+            // 6. Load bundle: prefer pre-compiled bytecode (.qbc), fall back to source (.js)
+            var bundleLoaded = false
+
+            if let qbcURL = Bundle.main.url(forResource: "wdk-bundle", withExtension: "qbc"),
+               let qbcData = try? Data(contentsOf: qbcURL) {
+                let rc = qbcData.withUnsafeBytes { buf -> Int32 in
+                    wdk_engine_load_bytecode(
+                        eng,
+                        buf.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                        qbcData.count
+                    )
+                }
+                if rc == 0 {
+                    bundleLoaded = true
+                    print("[WDK INFO]  Loaded wdk-bundle.qbc (bytecode)")
+                } else {
+                    print("[WDK WARN]  wdk-bundle.qbc load failed — falling back to .js")
+                }
             }
 
-            guard let jsSource = try? String(contentsOf: bundleURL, encoding: .utf8) else {
-                reject("E_LOAD", "Failed to read wdk-bundle.js", nil)
-                return
-            }
-
-            let evalResult = wdk_engine_eval(eng, jsSource)
-            if evalResult != 0 {
-                let err = wdk_engine_get_error(eng).map { String(cString: $0) }
-                             ?? "Unknown eval error"
-                reject("E_EVAL", err, nil)
-                return
+            if !bundleLoaded {
+                guard let jsURL = Bundle.main.url(
+                    forResource: "wdk-bundle",
+                    withExtension: "js"
+                ) else {
+                    reject("E_BUNDLE", "wdk-bundle.js not found in app bundle", nil)
+                    return
+                }
+                guard let jsSource = try? String(contentsOf: jsURL, encoding: .utf8) else {
+                    reject("E_LOAD", "Failed to read wdk-bundle.js", nil)
+                    return
+                }
+                let evalResult = wdk_engine_eval(eng, jsSource)
+                if evalResult != 0 {
+                    let err = wdk_engine_get_error(eng).map { String(cString: $0) }
+                                 ?? "Unknown eval error"
+                    reject("E_EVAL", err, nil)
+                    return
+                }
+                print("[WDK INFO]  Loaded wdk-bundle.js (source eval)")
             }
             _ = wdk_engine_pump(eng)
 
@@ -341,6 +403,20 @@ class WDKEngineModule: NSObject, RCTBridgeModule {
             wdk_free_string(resultPtr)
             _ = wdk_engine_pump(eng)
             resolve(result)
+
+            // Emit state-change event for methods that mutate wallet state
+            let stateMutators: Set<String> = [
+                "createWallet", "unlockWallet", "lockWallet", "destroyWallet"
+            ]
+            if stateMutators.contains(method),
+               let statePtr = wdk_engine_call(eng, "getState", "{}") {
+                let stateJson = String(cString: statePtr)
+                wdk_free_string(statePtr)
+                let decoded = (try? JSONSerialization.jsonObject(
+                    with: Data(stateJson.utf8)
+                ) as? String) ?? stateJson
+                self.emitStateChange(decoded)
+            }
         }
     }
 
@@ -357,11 +433,14 @@ class WDKEngineModule: NSObject, RCTBridgeModule {
             guard let resultPtr = wdk_engine_call(eng, "getState", "{}") else {
                 resolve("locked"); return
             }
-            let state = String(cString: resultPtr)
+            let jsonString = String(cString: resultPtr)
             wdk_free_string(resultPtr)
-            // Strip wrapping JSON quotes: "\"locked\"" → "locked"
-            let cleaned = state.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-            resolve(cleaned)
+            // wdk_engine_call JSON.stringifies the result, so a string "locked"
+            // comes back as "\"locked\"". Decode it properly via JSONSerialization.
+            let decoded = (try? JSONSerialization.jsonObject(
+                with: Data(jsonString.utf8)
+            ) as? String) ?? jsonString
+            resolve(decoded)
         }
     }
 
@@ -382,7 +461,33 @@ class WDKEngineModule: NSObject, RCTBridgeModule {
         }
     }
 
+    // MARK: - writeTestLog() — writes test output to tmp dir for host reading
+
+    @objc func writeTestLog(
+        _ content: String,
+        resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        let tmpDir = NSTemporaryDirectory()
+        let filePath = (tmpDir as NSString).appendingPathComponent("wdk-test-results.txt")
+        do {
+            try content.write(toFile: filePath, atomically: true, encoding: .utf8)
+            NSLog("[WDK_TEST_LOG] Results written to: %@", filePath)
+            // Also log each line via NSLog so it appears in os_log
+            for line in content.components(separatedBy: "\n") {
+                NSLog("%@", line)
+            }
+            resolve(filePath)
+        } catch {
+            reject("WRITE_ERR", "Failed to write test log: \(error)", error)
+        }
+    }
+
     deinit {
         if let eng = engine { wdk_engine_destroy(eng) }
+        // Release heap-allocated provider structs now that the engine is gone
+        platformProviderPtr?.deallocate()
+        storageProviderPtr?.deallocate()
+        netProviderPtr?.deallocate()
     }
 }

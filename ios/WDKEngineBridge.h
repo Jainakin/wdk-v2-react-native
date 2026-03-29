@@ -28,12 +28,21 @@ struct JSContext;
 WDKEngine *wdk_engine_create(void);
 void       wdk_engine_destroy(WDKEngine *engine);
 int        wdk_engine_eval(WDKEngine *engine, const char *js_source);
+int        wdk_engine_load_bytecode(WDKEngine *engine, const uint8_t *buf, size_t len);
 char      *wdk_engine_call(WDKEngine *engine, const char *func_name, const char *json_args);
 const char *wdk_engine_get_error(WDKEngine *engine);
 int        wdk_engine_pump(WDKEngine *engine);
 void       wdk_free_string(char *str);
 
 struct JSContext *wdk_engine_get_context(WDKEngine *engine);
+
+/* ════════════════════════════════════════════════════════════════════
+ * Pure-C Bridges (no platform provider required)
+ * Call these after wdk_engine_create(), before wdk_engine_eval().
+ * ════════════════════════════════════════════════════════════════════ */
+
+void wdk_register_crypto_bridge(struct JSContext *ctx);
+void wdk_register_encoding_bridge(struct JSContext *ctx);
 
 /* ════════════════════════════════════════════════════════════════════
  * Platform Provider

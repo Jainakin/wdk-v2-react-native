@@ -18,6 +18,7 @@
  *   const { txHash } = await WDKWallet.send({ chain: 'btc', to: '...', amount: '0.001' });
  */
 
+import { NativeEventEmitter } from 'react-native';
 import NativeWDKEngine from './NativeWDKEngine';
 import type {
   WalletState,
@@ -64,6 +65,24 @@ export const WDKWallet = {
   },
 
   /**
+   * Configure engine settings — call before unlockWallet().
+   * Use to switch a chain to testnet before the first unlock.
+   *
+   * @example
+   *   await WDKWallet.configure({ isTestnet: true });          // BTC testnet
+   *   await WDKWallet.configure({ chain: 'btc', isTestnet: true });
+   */
+  async configure(params: {
+    isTestnet?: boolean;
+    chain?: string;
+    network?: string;
+    btcClient?: { type: string; url?: string };
+  }): Promise<void> {
+    await WDKWallet.initialize();
+    await engineCall<void>('configure', params);
+  },
+
+  /**
    * Create a new wallet. Returns a mnemonic phrase.
    * Does NOT unlock the wallet — call unlockWallet() with the mnemonic.
    */
@@ -86,6 +105,7 @@ export const WDKWallet = {
    * The wallet can be unlocked again with the mnemonic.
    */
   async lockWallet(): Promise<void> {
+    await WDKWallet.initialize();
     await engineCall<void>('lockWallet');
   },
 
@@ -110,6 +130,7 @@ export const WDKWallet = {
    * Requires the wallet to be unlocked and the chain module registered.
    */
   async getAddress(params: GetAddressParams): Promise<string> {
+    await WDKWallet.initialize();
     return engineCall<string>('getAddress', params);
   },
 
@@ -117,6 +138,7 @@ export const WDKWallet = {
    * Get the balance for an address on a specific chain.
    */
   async getBalance(params: GetBalanceParams): Promise<string> {
+    await WDKWallet.initialize();
     return engineCall<string>('getBalance', params);
   },
 
@@ -125,6 +147,7 @@ export const WDKWallet = {
    * Builds, signs, and broadcasts in one call.
    */
   async send(params: SendParams): Promise<SendResult> {
+    await WDKWallet.initialize();
     return engineCall<SendResult>('send', params);
   },
 
@@ -132,13 +155,23 @@ export const WDKWallet = {
    * Get transaction history for an address.
    */
   async getHistory(params: { chain: ChainId; address: string; limit?: number }): Promise<TxRecord[]> {
+    await WDKWallet.initialize();
     return engineCall<TxRecord[]>('getHistory', params);
   },
 };
 
+// Singleton emitter — NativeEventEmitter requires the native module reference
+// and must not be re-created on every render.
+const wdkEmitter = new NativeEventEmitter(NativeWDKEngine as any);
+
 /**
  * React hook: get the current wallet state.
- * Polls every 500ms. For production, replace with event-based updates.
+ *
+ * Subscribes to the native "wdkStateChange" event emitted by WDKEngineModule
+ * (an RCTEventEmitter) whenever a state-mutating call completes.  Seeds the
+ * initial value with a one-time getState() call so the UI is correct on mount.
+ *
+ * No polling — zero overhead when the state is not changing.
  */
 export function useWalletState(): WalletState {
   // Lazy import React to avoid issues in non-React contexts
@@ -148,20 +181,22 @@ export function useWalletState(): WalletState {
   useEffect(() => {
     let mounted = true;
 
-    const poll = async () => {
-      try {
-        const s = await WDKWallet.getState();
-        if (mounted) setState(s);
-      } catch {
-        // Engine not initialized yet
-      }
-    };
+    // Seed with current state in case we mounted after a transition
+    WDKWallet.getState()
+      .then(s => { if (mounted) setState(s); })
+      .catch(() => {}); // engine not yet initialized — stay 'locked'
 
-    poll();
-    const interval = setInterval(poll, 500);
+    // Subscribe to native state-change events
+    const sub = wdkEmitter.addListener(
+      'wdkStateChange',
+      (event: { state: string }) => {
+        if (mounted) setState(event.state as WalletState);
+      }
+    );
+
     return () => {
       mounted = false;
-      clearInterval(interval);
+      sub.remove();
     };
   }, []);
 

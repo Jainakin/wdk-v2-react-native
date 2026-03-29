@@ -13,6 +13,18 @@ import { TurboModuleRegistry } from 'react-native';
 
 export interface Spec extends TurboModule {
   /**
+   * Required by RCTEventEmitter — called by NativeEventEmitter when a
+   * subscriber is added.  The native side increments its listener count.
+   */
+  addListener(eventName: string): void;
+
+  /**
+   * Required by RCTEventEmitter — called by NativeEventEmitter when
+   * subscribers are removed.  The native side decrements its listener count.
+   */
+  removeListeners(count: number): void;
+
+  /**
    * Initialize the engine and load the JS bytecode bundle.
    * Must be called once before any other method.
    */
