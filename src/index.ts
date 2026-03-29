@@ -182,6 +182,43 @@ export const WDKWallet = {
     await ensureInitialized();
     return engineCall<TxRecord[]>('getHistory', params);
   },
+
+  /**
+   * Preview a send transaction — estimate fees without signing/broadcasting.
+   */
+  async quoteSend(params: {
+    chain: ChainId;
+    from?: string;
+    address?: string;
+    to: string;
+    amount: string;
+  }): Promise<{
+    feasible: boolean;
+    fee: number;
+    feeRate: number;
+    inputCount: number;
+    outputCount: number;
+    change: number;
+    error?: string;
+  }> {
+    await ensureInitialized();
+    return engineCall('quoteSend', params);
+  },
+
+  /**
+   * Get the maximum spendable amount for an address.
+   */
+  async getMaxSpendable(params: {
+    chain: ChainId;
+    address: string;
+  }): Promise<{
+    maxSpendable: number;
+    fee: number;
+    utxoCount: number;
+  }> {
+    await ensureInitialized();
+    return engineCall('getMaxSpendable', params);
+  },
 };
 
 // Singleton emitter — NativeEventEmitter requires the native module reference
