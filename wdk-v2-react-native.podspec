@@ -23,12 +23,10 @@ Pod::Spec.new do |s|
 
   s.swift_version = "5.9"
 
-  # Use React-Core only — no codegen / install_modules_dependencies.
-  #
-  # Rationale: getTurboModule: requires codegen-generated WDKEngineSpec.h,
-  # which only exists after the full codegen pipeline runs. In RN 0.76+ new
-  # arch, RCT_EXTERN_MODULE classes are automatically accessible via
-  # TurboModuleRegistry.getEnforcing() without needing the generated JSI
-  # binding. This avoids the RN 0.83 duplicate-symbol linker issue entirely.
+  # React-Core: ObjC bridge types (RCTBridgeModule, RCTPromiseResolveBlock, etc.)
+  # ReactCommon/turbomodule/core: ObjCTurboModule runtime — wraps RCT_EXTERN_MODULE
+  #   classes as TurboModules accessible via TurboModuleRegistry.getEnforcing()
+  #   in RN 0.76+ bridgeless mode, without requiring codegen.
   s.dependency "React-Core"
+  s.dependency "ReactCommon/turbomodule/core"
 end
