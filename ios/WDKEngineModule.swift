@@ -179,6 +179,7 @@ private func wdkFetch(
     var request = URLRequest(url: requestURL)
     request.httpMethod      = methodStr
     request.timeoutInterval = timeoutMs > 0 ? TimeInterval(timeoutMs) / 1000.0 : 30.0
+    request.cachePolicy     = .reloadIgnoringLocalCacheData
 
     if let headersJson {
         let hStr = String(cString: headersJson)
