@@ -219,6 +219,23 @@ export const WDKWallet = {
     await ensureInitialized();
     return engineCall('getMaxSpendable', params);
   },
+
+  /**
+   * Get transaction confirmation status.
+   */
+  async getReceipt(params: {
+    chain: ChainId;
+    txHash: string;
+  }): Promise<{
+    txHash: string;
+    confirmed: boolean;
+    blockHeight: number;
+    blockTime: number;
+    fee: number;
+  }> {
+    await ensureInitialized();
+    return engineCall('getReceipt', params);
+  },
 };
 
 // Singleton emitter — NativeEventEmitter requires the native module reference
