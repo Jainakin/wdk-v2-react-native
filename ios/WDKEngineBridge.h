@@ -85,6 +85,10 @@ typedef void (*WDKFetchCallback)(void    *context,
                                   const uint8_t *body, size_t body_len,
                                   const char *error);
 
+typedef void (*WDKWSMessageCallback)(void *context,
+                                      const char *message,
+                                      const char *error);
+
 typedef struct {
     void (*fetch)(const char *url,
                   const char *method,
@@ -93,6 +97,11 @@ typedef struct {
                   int timeout_ms,
                   void *context,
                   WDKFetchCallback callback);
+    /* WebSocket — may be NULL if platform doesn't support WS */
+    void *(*ws_connect)(const char *url, void *context,
+                        WDKWSMessageCallback on_message);
+    void (*ws_send)(void *ws_handle, const char *data);
+    void (*ws_close)(void *ws_handle);
 } WDKNetProvider;
 
 void wdk_register_net_bridge(struct JSContext *ctx,

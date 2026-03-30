@@ -219,6 +219,106 @@ private func wdkFetch(
     }.resume()
 }
 
+// MARK: WebSocket: URLSessionWebSocketTask
+
+/// Tracks a single WebSocket connection for the C bridge
+private class WDKWebSocketConnection {
+    let handle: Int32
+    let task: URLSessionWebSocketTask
+    let context: UnsafeMutableRawPointer
+    let onMessage: @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> Void
+    var isOpen = true
+
+    init(handle: Int32, url: URL,
+         context: UnsafeMutableRawPointer,
+         onMessage: @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> Void) {
+        self.handle = handle
+        self.context = context
+        self.onMessage = onMessage
+        self.task = URLSession.shared.webSocketTask(with: url)
+        self.task.resume()
+        listenForMessages()
+    }
+
+    func listenForMessages() {
+        task.receive { [weak self] result in
+            guard let self = self, self.isOpen else { return }
+            switch result {
+            case .success(.string(let text)):
+                text.withCString { cStr in
+                    self.onMessage(self.context, cStr, nil)
+                }
+                self.listenForMessages()
+            case .success(.data(let data)):
+                let text = String(data: data, encoding: .utf8) ?? ""
+                text.withCString { cStr in
+                    self.onMessage(self.context, cStr, nil)
+                }
+                self.listenForMessages()
+            case .failure(let error):
+                self.isOpen = false
+                error.localizedDescription.withCString { cStr in
+                    self.onMessage(self.context, nil, cStr)
+                }
+            @unknown default:
+                self.listenForMessages()
+            }
+        }
+    }
+
+    func send(_ text: String) {
+        task.send(.string(text)) { _ in }
+    }
+
+    func close() {
+        isOpen = false
+        task.cancel(with: .normalClosure, reason: nil)
+    }
+}
+
+/// Global storage for active WS connections (accessed from C callbacks)
+private var wsConnections: [Int32: WDKWebSocketConnection] = [:]
+private var wsNextHandle: Int32 = 1
+
+/// C-callable: connect to a WebSocket URL
+private func wdkWSConnect(
+    _ url: UnsafePointer<CChar>?,
+    _ context: UnsafeMutableRawPointer?,
+    _ onMessage: (@convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> Void)?
+) -> UnsafeMutableRawPointer? {
+    guard let url, let context, let onMessage else { return nil }
+
+    let urlStr = String(cString: url)
+    guard let wsURL = URL(string: urlStr) else { return nil }
+
+    let handle = wsNextHandle
+    wsNextHandle += 1
+
+    let conn = WDKWebSocketConnection(handle: handle, url: wsURL,
+                                       context: context, onMessage: onMessage)
+    wsConnections[handle] = conn
+
+    // Return the handle as an opaque pointer (platform_handle)
+    // We use the handle value directly — it's retrieved via ws_find in C
+    return UnsafeMutableRawPointer(bitPattern: Int(handle))
+}
+
+/// C-callable: send data on a WebSocket
+private func wdkWSSend(_ wsHandle: UnsafeMutableRawPointer?, _ data: UnsafePointer<CChar>?) {
+    guard let wsHandle, let data else { return }
+    let handle = Int32(Int(bitPattern: wsHandle))
+    let text = String(cString: data)
+    wsConnections[handle]?.send(text)
+}
+
+/// C-callable: close a WebSocket
+private func wdkWSClose(_ wsHandle: UnsafeMutableRawPointer?) {
+    guard let wsHandle else { return }
+    let handle = Int32(Int(bitPattern: wsHandle))
+    wsConnections[handle]?.close()
+    wsConnections.removeValue(forKey: handle)
+}
+
 // ════════════════════════════════════════════════════════════════════
 // MARK: - WDKEngineModule — TurboModule + EventEmitter Implementation
 // ════════════════════════════════════════════════════════════════════
@@ -325,9 +425,14 @@ class WDKEngineModule: RCTEventEmitter {
             self.storageProviderPtr = sp
             wdk_register_storage_bridge(ctx, sp)
 
-            // 5. Network bridge — URLSession
+            // 5. Network bridge — URLSession (HTTP + WebSocket)
             let np = UnsafeMutablePointer<WDKNetProvider>.allocate(capacity: 1)
-            np.initialize(to: WDKNetProvider(fetch: wdkFetch))
+            np.initialize(to: WDKNetProvider(
+                fetch: wdkFetch,
+                ws_connect: wdkWSConnect,
+                ws_send: wdkWSSend,
+                ws_close: wdkWSClose
+            ))
             self.netProviderPtr = np
             wdk_register_net_bridge(ctx, np)
 
