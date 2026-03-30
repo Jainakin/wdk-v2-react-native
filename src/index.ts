@@ -252,6 +252,34 @@ export const WDKWallet = {
   },
 
   /**
+   * Get paginated transfer history with direction filter.
+   */
+  async getTransfers(params: {
+    chain: ChainId;
+    address: string;
+    direction?: 'sent' | 'received' | 'all';
+    limit?: number;
+    afterTxId?: string;
+    page?: number;
+  }): Promise<{
+    transfers: Array<{
+      txHash: string;
+      direction: 'sent' | 'received' | 'self';
+      amount: number;
+      fee: number;
+      timestamp: number;
+      blockHeight: number;
+      confirmed: boolean;
+      counterparties: string[];
+    }>;
+    hasMore: boolean;
+    nextCursor?: string;
+  }> {
+    await ensureInitialized();
+    return engineCall('getTransfers', params);
+  },
+
+  /**
    * Sign a message using Bitcoin Signed Message format.
    * Returns base64-encoded 65-byte signature.
    */
