@@ -246,6 +246,7 @@ export const WDKWallet = {
     fast: number;
     medium: number;
     slow: number;
+    normal: number;    // production alias for 'medium'
   }> {
     await ensureInitialized();
     return engineCall('getFeeRates', params);
