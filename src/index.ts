@@ -305,6 +305,74 @@ export const WDKWallet = {
     await ensureInitialized();
     return engineCall('verifyMessage', params);
   },
+
+  // ── Account lifecycle (production parity) ────────────────────────────
+
+  /**
+   * Get or create an account at the given index.
+   * Returns: { chainId, address, index, path, publicKey }
+   */
+  async getAccount(params: {
+    chain: ChainId;
+    index?: number;
+    addressType?: string;
+  }): Promise<{
+    chainId: string;
+    address: string;
+    index: number;
+    path: string;
+    publicKey: string;
+  }> {
+    await ensureInitialized();
+    return engineCall('getAccount', params);
+  },
+
+  /**
+   * Get or create an account by explicit derivation path.
+   */
+  async getAccountByPath(params: {
+    chain: ChainId;
+    path: string;
+  }): Promise<{
+    chainId: string;
+    address: string;
+    index: number;
+    path: string;
+    publicKey: string;
+  }> {
+    await ensureInitialized();
+    return engineCall('getAccountByPath', params);
+  },
+
+  /**
+   * Downcast an account to read-only (strips signing capabilities).
+   * Returns: { chainId, address, index, path } (no publicKey/keyHandle)
+   */
+  async toReadOnlyAccount(params: {
+    chain: ChainId;
+    index?: number;
+    addressType?: string;
+  }): Promise<{
+    chainId: string;
+    address: string;
+    index: number;
+    path: string;
+  }> {
+    await ensureInitialized();
+    return engineCall('toReadOnlyAccount', params);
+  },
+
+  /**
+   * Dispose an account — releases its key handle and removes from cache.
+   */
+  async disposeAccount(params: {
+    chain: ChainId;
+    index?: number;
+    addressType?: string;
+  }): Promise<void> {
+    await ensureInitialized();
+    await engineCall<void>('disposeAccount', params);
+  },
 };
 
 // Singleton emitter — NativeEventEmitter requires the native module reference
