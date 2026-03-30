@@ -250,6 +250,32 @@ export const WDKWallet = {
     await ensureInitialized();
     return engineCall('getFeeRates', params);
   },
+
+  /**
+   * Sign a message using Bitcoin Signed Message format.
+   * Returns base64-encoded 65-byte signature.
+   */
+  async signMessage(params: {
+    chain: ChainId;
+    message: string;
+    index?: number;
+  }): Promise<string> {
+    await ensureInitialized();
+    return engineCall('signMessage', params);
+  },
+
+  /**
+   * Verify a Bitcoin Signed Message against an address.
+   */
+  async verifyMessage(params: {
+    chain: ChainId;
+    message: string;
+    signature: string;
+    address: string;
+  }): Promise<boolean> {
+    await ensureInitialized();
+    return engineCall('verifyMessage', params);
+  },
 };
 
 // Singleton emitter — NativeEventEmitter requires the native module reference
