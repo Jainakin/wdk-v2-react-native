@@ -236,6 +236,20 @@ export const WDKWallet = {
     await ensureInitialized();
     return engineCall('getReceipt', params);
   },
+
+  /**
+   * Get current fee rates in sat/vB.
+   */
+  async getFeeRates(params: {
+    chain: ChainId;
+  }): Promise<{
+    fast: number;
+    medium: number;
+    slow: number;
+  }> {
+    await ensureInitialized();
+    return engineCall('getFeeRates', params);
+  },
 };
 
 // Singleton emitter — NativeEventEmitter requires the native module reference
