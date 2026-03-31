@@ -22,14 +22,32 @@ import { NativeEventEmitter } from 'react-native';
 import NativeWDKEngine from './NativeWDKEngine';
 import type {
   WalletState,
-  ChainId,
+  ConfigureParams,
   CreateWalletParams,
   CreateWalletResult,
   UnlockWalletParams,
-  SendParams,
-  SendResult,
   GetAddressParams,
   GetBalanceParams,
+  SendParams,
+  SendResult,
+  QuoteSendParams,
+  QuoteSendResult,
+  GetMaxSpendableParams,
+  MaxSpendableResult,
+  GetReceiptParams,
+  ReceiptResult,
+  GetFeeRatesParams,
+  FeeRatesResult,
+  GetTransfersParams,
+  TransferResult,
+  SignMessageParams,
+  VerifyMessageParams,
+  GetAccountParams,
+  AccountInfo,
+  GetAccountByPathParams,
+  ToReadOnlyAccountParams,
+  ReadOnlyAccountInfo,
+  DisposeAccountParams,
   TxRecord,
 } from './types';
 
@@ -90,17 +108,8 @@ export const WDKWallet = {
   /**
    * Configure engine settings — call before unlockWallet().
    * Use to switch a chain to testnet before the first unlock.
-   *
-   * @example
-   *   await WDKWallet.configure({ isTestnet: true });          // BTC testnet
-   *   await WDKWallet.configure({ chain: 'btc', isTestnet: true });
    */
-  async configure(params: {
-    isTestnet?: boolean;
-    chain?: string;
-    network?: string;
-    btcClient?: { type: string; url?: string };
-  }): Promise<void> {
+  async configure(params: ConfigureParams): Promise<void> {
     await ensureInitialized();
     await engineCall<void>('configure', params);
   },
@@ -149,6 +158,8 @@ export const WDKWallet = {
     return state as WalletState;
   },
 
+  // ── Address + Balance ──────────────────────────────────────────────────
+
   /**
    * Get a wallet address for a specific chain.
    * Requires the wallet to be unlocked and the chain module registered.
@@ -160,11 +171,14 @@ export const WDKWallet = {
 
   /**
    * Get the balance for an address on a specific chain.
+   * If address is omitted, uses the account at the given index.
    */
   async getBalance(params: GetBalanceParams): Promise<string> {
     await ensureInitialized();
     return engineCall<string>('getBalance', params);
   },
+
+  // ── Transactions ───────────────────────────────────────────────────────
 
   /**
    * Send a transaction.
@@ -176,200 +190,111 @@ export const WDKWallet = {
   },
 
   /**
-   * Get transaction history for an address.
-   */
-  async getHistory(params: { chain: ChainId; address: string; limit?: number }): Promise<TxRecord[]> {
-    await ensureInitialized();
-    return engineCall<TxRecord[]>('getHistory', params);
-  },
-
-  /**
    * Preview a send transaction — estimate fees without signing/broadcasting.
    */
-  async quoteSend(params: {
-    chain: ChainId;
-    from?: string;
-    address?: string;
-    to: string;
-    amount: string;
-  }): Promise<{
-    feasible: boolean;
-    fee: number;
-    feeRate: number;
-    inputCount: number;
-    outputCount: number;
-    change: number;
-    error?: string;
-  }> {
+  async quoteSend(params: QuoteSendParams): Promise<QuoteSendResult> {
     await ensureInitialized();
-    return engineCall('quoteSend', params);
+    return engineCall<QuoteSendResult>('quoteSend', params);
   },
 
   /**
-   * Get the maximum spendable amount for an address.
+   * Get the maximum spendable amount.
+   * If address is omitted, uses the account at the given index.
    */
-  async getMaxSpendable(params: {
-    chain: ChainId;
-    address: string;
-  }): Promise<{
-    maxSpendable: number;
-    fee: number;
-    utxoCount: number;
-  }> {
+  async getMaxSpendable(params: GetMaxSpendableParams): Promise<MaxSpendableResult> {
     await ensureInitialized();
-    return engineCall('getMaxSpendable', params);
+    return engineCall<MaxSpendableResult>('getMaxSpendable', params);
   },
 
   /**
    * Get transaction confirmation status.
+   * Returns null for unconfirmed transactions (matching production).
    */
-  async getReceipt(params: {
-    chain: ChainId;
-    txHash: string;
-  }): Promise<{
-    txHash: string;
-    confirmed: boolean;
-    blockHeight: number;
-    blockTime: number;
-    fee: number;
-  }> {
+  async getReceipt(params: GetReceiptParams): Promise<ReceiptResult | null> {
     await ensureInitialized();
-    return engineCall('getReceipt', params);
+    return engineCall<ReceiptResult | null>('getReceipt', params);
   },
 
   /**
    * Get current fee rates in sat/vB.
    */
-  async getFeeRates(params: {
-    chain: ChainId;
-  }): Promise<{
-    fast: number;
-    medium: number;
-    slow: number;
-    normal: number;    // production alias for 'medium'
-  }> {
+  async getFeeRates(params: GetFeeRatesParams): Promise<FeeRatesResult> {
     await ensureInitialized();
-    return engineCall('getFeeRates', params);
+    return engineCall<FeeRatesResult>('getFeeRates', params);
+  },
+
+  // ── History + Transfers ────────────────────────────────────────────────
+
+  /**
+   * Get transaction history for an address.
+   * If address is omitted, uses the account at the given index.
+   */
+  async getHistory(params: { chain: string; address?: string; index?: number; limit?: number }): Promise<TxRecord[]> {
+    await ensureInitialized();
+    return engineCall<TxRecord[]>('getHistory', params);
   },
 
   /**
    * Get paginated transfer history with direction filter.
+   * Returns per-output rows matching production BtcTransfer semantics.
    */
-  async getTransfers(params: {
-    chain: ChainId;
-    address: string;
-    direction?: 'sent' | 'received' | 'all';
-    limit?: number;
-    afterTxId?: string;
-    page?: number;
-  }): Promise<{
-    transfers: Array<{
-      txHash: string;
-      direction: 'sent' | 'received' | 'self';
-      amount: number;
-      fee: number;
-      timestamp: number;
-      blockHeight: number;
-      confirmed: boolean;
-      counterparties: string[];
-    }>;
-    hasMore: boolean;
-    nextCursor?: string;
-  }> {
+  async getTransfers(params: GetTransfersParams): Promise<TransferResult> {
     await ensureInitialized();
-    return engineCall('getTransfers', params);
+    return engineCall<TransferResult>('getTransfers', params);
   },
+
+  // ── Sign / Verify ──────────────────────────────────────────────────────
 
   /**
    * Sign a message using Bitcoin Signed Message format.
-   * Returns base64-encoded 65-byte signature.
+   * Returns base64-encoded 65-byte signature with BIP-137 recovery flag.
    */
-  async signMessage(params: {
-    chain: ChainId;
-    message: string;
-    index?: number;
-  }): Promise<string> {
+  async signMessage(params: SignMessageParams): Promise<string> {
     await ensureInitialized();
-    return engineCall('signMessage', params);
+    return engineCall<string>('signMessage', params);
   },
 
   /**
    * Verify a Bitcoin Signed Message against an address.
    */
-  async verifyMessage(params: {
-    chain: ChainId;
-    message: string;
-    signature: string;
-    address: string;
-  }): Promise<boolean> {
+  async verifyMessage(params: VerifyMessageParams): Promise<boolean> {
     await ensureInitialized();
-    return engineCall('verifyMessage', params);
+    return engineCall<boolean>('verifyMessage', params);
   },
 
-  // ── Account lifecycle (production parity) ────────────────────────────
+  // ── Account lifecycle (production parity) ──────────────────────────────
 
   /**
    * Get or create an account at the given index.
-   * Returns: { chainId, address, index, path, publicKey }
+   * Returns full account info including publicKey.
    */
-  async getAccount(params: {
-    chain: ChainId;
-    index?: number;
-    addressType?: string;
-  }): Promise<{
-    chainId: string;
-    address: string;
-    index: number;
-    path: string;
-    publicKey: string;
-  }> {
+  async getAccount(params: GetAccountParams): Promise<AccountInfo> {
     await ensureInitialized();
-    return engineCall('getAccount', params);
+    return engineCall<AccountInfo>('getAccount', params);
   },
 
   /**
    * Get or create an account by explicit derivation path.
+   * Accepts both full paths ("m/84'/0'/0'/0/1") and production suffix format ("0'/0/1").
    */
-  async getAccountByPath(params: {
-    chain: ChainId;
-    path: string;
-  }): Promise<{
-    chainId: string;
-    address: string;
-    index: number;
-    path: string;
-    publicKey: string;
-  }> {
+  async getAccountByPath(params: GetAccountByPathParams): Promise<AccountInfo> {
     await ensureInitialized();
-    return engineCall('getAccountByPath', params);
+    return engineCall<AccountInfo>('getAccountByPath', params);
   },
 
   /**
    * Downcast an account to read-only (strips signing capabilities).
-   * Returns: { chainId, address, index, path } (no publicKey/keyHandle)
+   * Returns account info without publicKey/keyHandle.
    */
-  async toReadOnlyAccount(params: {
-    chain: ChainId;
-    index?: number;
-    addressType?: string;
-  }): Promise<{
-    chainId: string;
-    address: string;
-    index: number;
-    path: string;
-  }> {
+  async toReadOnlyAccount(params: ToReadOnlyAccountParams): Promise<ReadOnlyAccountInfo> {
     await ensureInitialized();
-    return engineCall('toReadOnlyAccount', params);
+    return engineCall<ReadOnlyAccountInfo>('toReadOnlyAccount', params);
   },
 
   /**
    * Dispose an account — releases its key handle and removes from cache.
    */
-  async disposeAccount(params: {
-    chain: ChainId;
-    index?: number;
-    addressType?: string;
-  }): Promise<void> {
+  async disposeAccount(params: DisposeAccountParams): Promise<void> {
     await ensureInitialized();
     await engineCall<void>('disposeAccount', params);
   },
